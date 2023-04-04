@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.VisualBasic;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
@@ -22,7 +23,7 @@ namespace CryptoBuddy
     {
         Microsoft.UI.Windowing.AppWindow m_appWindow;
         System.Timers.Timer timer;
-        private bool _topMost = true;
+        private bool _topMost = false;
         private readonly Mutex m = new Mutex();
 
         public MainWindow()
@@ -61,24 +62,25 @@ namespace CryptoBuddy
             List<Task<string>> tasks = new List<Task<string>>();
 
             Dictionary<int, string> taskDict = new Dictionary<int, string>();
-            foreach (var k in dict.Keys)
+            foreach (var key in dict.Keys)
             {
-                var url = $"https://www.google.com/finance/quote/{k}";
+                var url = $"https://www.google.com/finance/quote/{key}";
                 HttpClient client = new HttpClient();
                 var task1 = client.GetStringAsync(url);
-                taskDict[task1.Id] = k;
+                taskDict[task1.Id] = key;
                 tasks.Add(task1);
                 await Task.Delay(300);
             }
             try
             {
                 await Task.WhenAll(tasks.ToArray());
+                GetStockValuesUpdateControls(tasks, taskDict);
             }
             catch (System.Exception ex)
             {
-
+                // add logging soon for errors
+                Debug.WriteLine(ex.Message);
             }
-            GetStockValuesUpdateControls(tasks, taskDict);
         }
 
         private void GetStockValuesUpdateControls(List<Task<String>> tasks, Dictionary<int, string> taskDict)
@@ -97,7 +99,7 @@ namespace CryptoBuddy
 
             // because we are using a timer and some calls could be slow for network traffic, avoid re-entrancy with a mutex
             // also to avoid multiple events stacking on each other creating a packed backlog, put in a timeout.
-            if (!m.WaitOne(4000, false))
+            if (!m.WaitOne(Constants.MutexBlockedTimeoutMillis, false))
             {
                 return;
             }
@@ -115,15 +117,14 @@ namespace CryptoBuddy
 
         private void _lookupAndUpdate(List<Task<string>> tasks, Dictionary<int, string> taskDict)
         {
-            StringBuilder sb = new StringBuilder();
             this.stpPanel.Children.Clear();
             foreach (var task in tasks)
             {
                 var stackPanel = new StackPanel();
                 stackPanel.Orientation = Orientation.Horizontal;
                 var currencyName = taskDict[task.Id];
-                string currencyValue = "??";
-                string lastClose = "??";
+                string currencyValue = Constants.ValueNotAvailableDisplayText;
+                string lastClose = Constants.ValueNotAvailableDisplayText;
                 string rawPage;
                 try
                 {
@@ -177,7 +178,7 @@ namespace CryptoBuddy
                 bo3.Background = new SolidColorBrush(new Windows.UI.Color() { A = 255, R = 0, B = 0, G = 0 });
 
                 var tb3 = new TextBlock();
-                tb3.Text = "close:";
+                tb3.Text = Constants.CloseLabelText;
                 tb3.Foreground = new SolidColorBrush(new Windows.UI.Color() { A = 255, R = 192, B = 192, G = 192 });
                 tb3.HorizontalAlignment = HorizontalAlignment.Left;
                 tb3.Width = 55;
@@ -260,12 +261,12 @@ namespace CryptoBuddy
         {
             if (_topMost)
             {
-                m_appWindow.SetPresenter(AppWindowPresenterKind.CompactOverlay);
+                m_appWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
                 _topMost = false;
             }
             else
             {
-                m_appWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
+                m_appWindow.SetPresenter(AppWindowPresenterKind.CompactOverlay);
                 _topMost = true;
             }
         }

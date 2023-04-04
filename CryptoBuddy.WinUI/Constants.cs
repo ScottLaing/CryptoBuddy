@@ -10,6 +10,7 @@ namespace CryptoBuddy
     {
         public const string AppTitle = "CryptoBuddy";
         public const int TimerPeriodMillis = 5000;
+        public const int MutexBlockedTimeoutMillis = 1000;
         public static readonly Dictionary<string, string> CurrencyDictionary = new Dictionary<string, string>()
             {
                 {"BTC-USD", "Bitcoin" },
@@ -19,5 +20,7 @@ namespace CryptoBuddy
                 {"DOGE-USD", "Dogecoin" },
                 {"LTC-USD", "Litecoin" }
             };
+        public const string CloseLabelText = "close:";
+        public const string ValueNotAvailableDisplayText = "??";
     }
 }
