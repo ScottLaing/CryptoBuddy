@@ -1,123 +1,62 @@
+using Microsoft.UI;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Data;
-using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Navigation;
+using Microsoft.VisualBasic;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices.WindowsRuntime;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
-using System.Media;
-using WinRT;
-// Needed for WindowId
-using Microsoft.UI;
-// Needed for AppWindow
-using Microsoft.UI.Windowing;
-// Needed for XAML hwnd interop
-using WinRT.Interop;
-using ABI.System;
 using System.Net.Http;
-using System.Threading.Tasks;
 using System.Text;
 using System.Text.RegularExpressions;
-using Windows.UI.WindowManagement;
-//using System.Drawing;
-
-// To learn more about WinUI, the WinUI project structure,
-// and more about our project templates, see: http://aka.ms/winui-project-info.
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace CryptoBuddy
 {
     /// <summary>
-    /// An empty window that can be used on its own or navigated to within a Frame.
+    /// Main Crypto Buddy window
     /// </summary>
     public sealed partial class MainWindow : Window
     {
         Microsoft.UI.Windowing.AppWindow m_appWindow;
         System.Timers.Timer timer;
+        private bool _topMost = true;
+        private readonly Mutex m = new Mutex();
 
         public MainWindow()
         {
             this.InitializeComponent();
             m_appWindow = GetAppWindowForCurrentWindow();
-            timer = new(interval: 15000);
+            timer = new(interval: Constants.TimerPeriodMillis);
             timer.Elapsed += (sender, e) => HandleTimer();
             timer.Start();
             ((FrameworkElement)this.Content).RequestedTheme = ElementTheme.Dark;
-            pad_clicked1(null, null);
-            m_appWindow = GetAppWindowForCurrentWindow();
-            m_appWindow.Title = "CryptoBuddy";
+            TimeElapsed(null, null);
+            m_appWindow.Title = Constants.AppTitle;
 
             IntPtr hWnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
             var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hWnd);
             var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
             appWindow.Resize(new Windows.Graphics.SizeInt32 { Width = 565, Height = 380 });
-
-
         }
 
         void HandleTimer()
         {
-            pad_clicked1(null, null);
+            TimeElapsed(null, null);
         }
 
         private void SwtichPresenter_CompOverlay(object sender, RoutedEventArgs e)
         {
-            m_appWindow.SetPresenter(AppWindowPresenterKind.CompactOverlay);
+            //m_appWindow.SetPresenter(AppWindowPresenterKind.CompactOverlay);
+            //m_appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
+            //m_appWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
         }
 
-        private void SwtichPresenter_Fullscreen(object sender, RoutedEventArgs e)
+        private async void TimeElapsed(object sender, RoutedEventArgs e)
         {
-            m_appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
-        }
-
-        private void SwtichPresenter_Overlapped(object sender, RoutedEventArgs e)
-        {
-            m_appWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
-        }
-
-        private void myButton_Click(object sender, RoutedEventArgs e)
-        {
-           // myButton.Content = "Clicked";
-        }
-
-        private void CheckBox_Checked(object sender, RoutedEventArgs e)
-        {
-
-        }
-
-        private void CheckBox_Unchecked(object sender, RoutedEventArgs e)
-        {
-
-        }
-
-        private void pad_clicked(object sender, RoutedEventArgs e)
-        {
-            // get the full path to your app’s folder where it is installed
-            var installedPath = Windows.ApplicationModel.Package.Current.InstalledLocation.Path;
-            // join path above with the sub-paths in your Assets folder and the specific sound file
-            var soundFile = Path.Join(installedPath, "Assets", "rim.wav");
-
-            SoundPlayer player = new System.Media.SoundPlayer(soundFile);
-            player.Play();
-        }
-
-        private async void pad_clicked1(object sender, RoutedEventArgs e)
-        {
-            var dict = new Dictionary<string, string>()
-            {
-                {"BTC-USD", "Bitcoin" },
-                {"ETH-USD", "Etherium" },
-                {"ADA-USD", "Cardano" },
-                {"XRP-USD", "XRP" },
-                {"DOGE-USD", "Dogecoin" },
-                {"LTC-USD", "Litecoin" }
-            };
+            var dict = Constants.CurrencyDictionary;
 
             List<Task<string>> tasks = new List<Task<string>>();
 
@@ -140,22 +79,12 @@ namespace CryptoBuddy
 
             }
             GetStockValuesUpdateControls(tasks, taskDict);
-            //this.txtEtherium.Text = sb.ToString();
-
-            //view - source:https://www.google.com/finance/quote/ETC-USD
-
-            // get the full path to your app’s folder where it is installed
-            //var installedPath = Windows.ApplicationModel.Package.Current.InstalledLocation.Path;
-            //// join path above with the sub-paths in your Assets folder and the specific sound file
-            //var soundFile = Path.Join(installedPath, "Assets", "kick.wav");
-
-            //SoundPlayer player = new System.Media.SoundPlayer(soundFile);
-            //player.Play();
         }
 
         private void GetStockValuesUpdateControls(List<Task<String>> tasks, Dictionary<int, string> taskDict)
         {
-            if (! this.stpPanel.DispatcherQueue.HasThreadAccess)
+            // make sure this and related method are called on UI thread, marshall to UI thread if not.
+            if (!this.stpPanel.DispatcherQueue.HasThreadAccess)
             {
                 this.stpPanel.DispatcherQueue.TryEnqueue(
                       () =>
@@ -165,34 +94,49 @@ namespace CryptoBuddy
                     );
                 return;
             }
+
+            // because we are using a timer and some calls could be slow for network traffic, avoid re-entrancy with a mutex
+            // also to avoid multiple events stacking on each other creating a packed backlog, put in a timeout.
+            if (!m.WaitOne(4000, false))
+            {
+                return;
+            }
+
+            try
+            {
+                _lookupAndUpdate(tasks, taskDict);
+            }
+            finally
+            {
+                m.ReleaseMutex();
+            }
+
+        }
+
+        private void _lookupAndUpdate(List<Task<string>> tasks, Dictionary<int, string> taskDict)
+        {
             StringBuilder sb = new StringBuilder();
             this.stpPanel.Children.Clear();
-            foreach (var t in tasks)
+            foreach (var task in tasks)
             {
-                var sp = new StackPanel();
-                sp.Orientation = Orientation.Horizontal;
-                // sp.Background = new SolidColorBrush(new Windows.UI.Color() { A = 255, R = 0, B = 0, G = 128 });
-
-                var currencyName = taskDict[t.Id];
+                var stackPanel = new StackPanel();
+                stackPanel.Orientation = Orientation.Horizontal;
+                var currencyName = taskDict[task.Id];
                 string currencyValue = "??";
                 string lastClose = "??";
                 string rawPage;
                 try
                 {
-                    rawPage = t.Result;
+                    rawPage = task.Result;
                 }
                 catch
                 {
                     rawPage = "";
                 }
-                
+
                 currencyValue = GetCurrencyValue(currencyValue, rawPage);
                 lastClose = GetLastCloseValue(currencyValue, rawPage);
 
-                if (currencyValue == "??")
-                {
-
-                }
                 var s4 = currencyName.Replace("-USD", "");
                 var s3 = $"{s4}: ${currencyValue} last close: ${lastClose}";
                 var s5 = $"${lastClose}";
@@ -211,7 +155,7 @@ namespace CryptoBuddy
 
                 bo.Child = tb;
 
-                sp.Children.Add(bo);
+                stackPanel.Children.Add(bo);
 
                 var bo2 = new Border();
                 bo2.Background = new SolidColorBrush(new Windows.UI.Color() { A = 255, R = 0, B = 64, G = 0 });
@@ -227,7 +171,7 @@ namespace CryptoBuddy
 
                 bo2.Child = tb2;
 
-                sp.Children.Add(bo2);
+                stackPanel.Children.Add(bo2);
 
                 var bo3 = new Border();
                 bo3.Background = new SolidColorBrush(new Windows.UI.Color() { A = 255, R = 0, B = 0, G = 0 });
@@ -242,7 +186,7 @@ namespace CryptoBuddy
 
                 bo3.Child = tb3;
 
-                sp.Children.Add(bo3);
+                stackPanel.Children.Add(bo3);
 
                 var bo4 = new Border();
                 bo4.Background = new SolidColorBrush(new Windows.UI.Color() { A = 255, R = 0, B = 24, G = 0 });
@@ -258,20 +202,12 @@ namespace CryptoBuddy
 
                 bo4.Child = tb4;
 
-                sp.Children.Add(bo4);
+                stackPanel.Children.Add(bo4);
 
-
-
-
-                //                <TextBlock Text="Some info here" Foreground="Purple" HorizontalAlignment="Left" Margin="0,0,0,5"></TextBlock>
-
-                this.stpPanel.Children.Add(sp);
-                //sb.Append(currencyName);
-                //sb.Append(": ");
-                //sb.Append(currencyValue);
-                //sb.AppendLine();
+                this.stpPanel.Children.Add(stackPanel);
             }
         }
+
         private static string GetCurrencyValue(string currencyValue, string rawPage)
         {
             var i = rawPage.IndexOf("data-last-price");
@@ -320,38 +256,17 @@ namespace CryptoBuddy
             return currencyValue;
         }
 
-        private void pad_clicked2(object sender, RoutedEventArgs e)
-        {
-            // get the full path to your app’s folder where it is installed
-            var installedPath = Windows.ApplicationModel.Package.Current.InstalledLocation.Path;
-            // join path above with the sub-paths in your Assets folder and the specific sound file
-            var soundFile = Path.Join(installedPath, "Assets", "clip1.wav");
-
-            SoundPlayer player = new System.Media.SoundPlayer(soundFile);
-            player.Play();
-        }
-
-        private void pad_clicked3(object sender, RoutedEventArgs e)
-        {
-            // get the full path to your app’s folder where it is installed
-            var installedPath = Windows.ApplicationModel.Package.Current.InstalledLocation.Path;
-            // join path above with the sub-paths in your Assets folder and the specific sound file
-            var soundFile = Path.Join(installedPath, "Assets", "clip2.wav");
-
-            SoundPlayer player = new System.Media.SoundPlayer(soundFile);
-            player.Play();
-        }
-
         private void ToggleSwitch_Toggled(object sender, RoutedEventArgs e)
         {
-            ToggleSwitch toggleSwitch = sender as ToggleSwitch;
-            if (toggleSwitch.IsOn)
+            if (_topMost)
             {
-                ((FrameworkElement)this.Content).RequestedTheme = ElementTheme.Dark;
+                m_appWindow.SetPresenter(AppWindowPresenterKind.CompactOverlay);
+                _topMost = false;
             }
             else
             {
-                ((FrameworkElement)this.Content).RequestedTheme = ElementTheme.Light;
+                m_appWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
+                _topMost = true;
             }
         }
 

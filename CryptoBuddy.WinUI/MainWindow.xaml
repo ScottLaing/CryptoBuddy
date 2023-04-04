@@ -19,7 +19,7 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <Button Background="#C4425A" HorizontalAlignment="Left" Grid.Row="0" Grid.Column="0" Content="Refresh" Width="100" Click="pad_clicked1" Margin="30,12,0,0"/>
+            <Button Background="#C4425A" HorizontalAlignment="Left" Grid.Row="0" Grid.Column="0" Content="Refresh" Width="100" Click="TimeElapsed" Margin="30,12,0,0"/>
             <!--<DropDownButton Content="Display" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Left" 
                             Width="118" >
                 <DropDownButton.Flyout>
@@ -31,8 +31,9 @@
                 </DropDownButton.Flyout>
             </DropDownButton>-->
 
-            <ToggleSwitch AutomationProperties.Name="simple ToggleSwitch" x:Name="dark_switch" Grid.Column="1" 
-                          CornerRadius="3" VerticalAlignment="Center"  HorizontalAlignment="Right" MinWidth="0" 
+            <ToggleSwitch AutomationProperties.Name="simple ToggleSwitch" x:Name="dark_switch" Grid.Column="0" 
+                          OnContent="On Top" OffContent="Normal"
+                          CornerRadius="3" VerticalAlignment="Center"  HorizontalAlignment="Right" Margin="0,0,15,0" MinWidth="100" 
                           HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Toggled="ToggleSwitch_Toggled" />
         </Grid>
 
@@ -40,7 +41,9 @@
 
 
 
-            <StackPanel Orientation="Vertical" HorizontalAlignment="Center" x:Name="stpPanel" Width="440" Height="800" Grid.Row="1" Grid.Column="0">
+            <StackPanel Orientation="Vertical" HorizontalAlignment="Center" x:Name="stpPanel" Width="440" Height="800" Grid.Row="1"
+                        
+                        Grid.Column="0">
             </StackPanel>
             <TextBlock Grid.RowSpan="10" Grid.ColumnSpan="10" Height="400" Width="600" Text="Result1" Grid.Row="3" Grid.Column="0" x:Name="txtEtherium" Visibility="Collapsed">
 
